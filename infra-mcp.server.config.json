@@ -1,0 +1,47 @@
+{
+    "http":  {
+                 "host":  "127.0.0.1",
+                 "port":  3120,
+                 "path":  "/mcp",
+                 "logFullData":  true
+             },
+    "projects":  [
+                     {
+                         "projectKey":  "demo-project",
+                         "projectName":  "Demo Project",
+                         "mysql":  {
+                                       "host":  "127.0.0.1",
+                                       "port":  3306,
+                                       "user":  "demo_user",
+                                       "password":  "demo_password",
+                                       "database":  "demo_database",
+                                       "connectionLimit":  5
+                                   },
+                         "redis":  {
+                                       "host":  "127.0.0.1",
+                                       "port":  6379,
+                                       "username":  "",
+                                       "password":  "demo_password",
+                                       "database":  0
+                                   },
+                         "linuxServers":  [
+                                              {
+                                                  "name":  "demo-password-server",
+                                                  "host":  "192.168.1.10",
+                                                  "port":  22,
+                                                  "username":  "deploy",
+                                                  "password":  "demo_password",
+                                                  "privateKeyPath":  ""
+                                              },
+                                              {
+                                                  "name":  "demo-private-key-server",
+                                                  "host":  "192.168.1.11",
+                                                  "port":  22,
+                                                  "username":  "deploy",
+                                                  "password":  "",
+                                                  "privateKeyPath":  "keys/demo_id_rsa"
+                                              }
+                                          ]
+                     }
+                 ]
+}

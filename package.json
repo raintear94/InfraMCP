@@ -1,0 +1,21 @@
+{
+    "name":  "infra-mcp-runtime",
+    "version":  "1.0.0",
+    "description":  "Obfuscated runtime package for Infra MCP.",
+    "type":  "module",
+    "main":  "dist/index.js",
+    "scripts":  {
+                    "start":  "node dist/index.js"
+                },
+    "dependencies":  {
+                         "@modelcontextprotocol/sdk":  "1.29.0",
+                         "mysql2":  "^3.15.3",
+                         "node-sql-parser":  "^5.4.0",
+                         "redis":  "^5.10.0",
+                         "ssh2":  "^1.17.0",
+                         "zod":  "^4.1.13"
+                     },
+    "engines":  {
+                    "node":  "\u003e=20.0.0"
+                }
+}
