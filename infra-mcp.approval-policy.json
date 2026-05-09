@@ -1,0 +1,12 @@
+{
+    "version":  1,
+    "linux":  {
+                  "requireApprovalByRiskType":  {
+                                                    "complex_shell":  true,
+                                                    "sudo":  true,
+                                                    "unknown_command":  true,
+                                                    "mutating_argument":  true,
+                                                    "unsupported_policy":  true
+                                                }
+              }
+}

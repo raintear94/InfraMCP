@@ -10,7 +10,8 @@ Real connection details are stored only in `infra-mcp.server.config.json` under 
 - `mysql_list_tables`: list tables in a specified database, limited to 400 rows.
 - `mysql_select`: run only a single `SELECT` query, limited to 400 returned rows.
 - `redis_query`: run only Redis commands from the read-only allowlist.
-- `linux_exec`: run deployment Linux shell commands over SSH; read-only diagnostic commands that match the allowlist run directly, while commands with side effects or unknown commands require confirmation in the server console.
+- `linux_exec`: run structured deployment Linux commands over SSH; pass `program`, `args`, `cwd`, and `explanation` for a single command, or pass a `commands` array for multiple commands. Do not wrap multiple commands with `bash -lc` or `sh -c`. Read-only diagnostic commands that match the allowlist run directly, while commands with side effects or unknown commands require confirmation in the web console.
+- Web console: open `http://127.0.0.1:3120/console` to view separate MySQL, Redis, and Linux input/output streams and maintain Linux risk-type approval policy.
 
 ## Usage
 
@@ -63,7 +64,15 @@ Real connection details are stored only in `infra-mcp.server.config.json` under 
    http://127.0.0.1:3120/mcp
    ```
 
-6. Before using tools, the agent should read `infra-mcp.client.config.json` from the current business project root, follow its `prompt`, and then pass `projectKey` to MCP tools.
+6. Open the web console to view tool output:
+
+   ```text
+   http://127.0.0.1:3120/console
+   ```
+
+   The browser connects to the server through `ws://127.0.0.1:3120/console/ws`. MySQL, Redis, and Linux output is separated, and input, output, error, and approval events use different colors.
+
+7. Before using tools, the agent should read `infra-mcp.client.config.json` from the current business project root, follow its `prompt`, and then pass `projectKey` to MCP tools.
 
 ## Release Packaging
 
@@ -158,7 +167,8 @@ Linux SSH login supports passwords or private keys. For password login, fill in 
 
 - MySQL exposes only database listing, table listing, and single `SELECT` queries. Writes and DDL are not allowed.
 - Redis exposes only commands from the read-only allowlist.
-- Linux automatic execution allows only simple commands or pipelines made of read-only allowlisted commands.
-- Linux commands that include `sudo`, multiple statements, redirection, background execution, command substitution, unknown commands, or suspected side-effect operations require confirmation in the server console.
-- The Linux confirmation input is prefilled with `y`; pressing Enter directly confirms execution, deleting `y` and entering other content cancels execution, and only final input `y` runs the command.
+- Linux automatic execution allows only simple commands formatted from structured input or pipelines made of read-only allowlisted commands.
+- Linux commands that include `sudo`, multiple statements, redirection, background execution, command substitution, unknown commands, or suspected side-effect operations wait for confirmation in the web console.
+- The Linux approval dialog lists each pending command with the Agent-provided `explanation`, and commands that trigger approval are highlighted in red.
+- Linux approval is controlled by risk type, and the policy is stored in `infra-mcp.approval-policy.json` under the service directory. Disabling approval for a risk type in the web console lets later commands of the same type run without manual confirmation.
 - Do not listen on an untrusted network.

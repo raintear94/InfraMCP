@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Infra MCP 控制台</title>
+    <link rel="stylesheet" href="/console/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Infra MCP</p>
+          <h1>运行控制台</h1>
+        </div>
+        <div class="connection" id="connectionState">连接中</div>
+      </header>
+
+      <section class="workspace" aria-label="运行控制台">
+        <aside class="rail" aria-label="审批策略">
+          <section class="panel">
+            <div class="panel-title">
+              <h2>审批策略</h2>
+              <span>Linux</span>
+            </div>
+            <div id="riskPolicyList" class="policy-list"></div>
+          </section>
+        </aside>
+
+        <section class="streams" aria-label="输出窗口">
+          <div class="stream-tabs" role="tablist" aria-label="输出类型">
+            <button class="stream-tab active" id="linuxTab" type="button" role="tab" aria-selected="true" data-source="linux">
+              Linux
+              <span id="linuxCount">0 条</span>
+            </button>
+            <button class="stream-tab" id="mysqlTab" type="button" role="tab" aria-selected="false" data-source="mysql">
+              MySQL
+              <span id="mysqlCount">0 条</span>
+            </button>
+            <button class="stream-tab" id="redisTab" type="button" role="tab" aria-selected="false" data-source="redis">
+              Redis
+              <span id="redisCount">0 条</span>
+            </button>
+          </div>
+
+          <section class="stream-panel active" data-source="linux" role="tabpanel" aria-labelledby="linuxTab">
+            <div class="stream-header">
+              <h2>Linux 输出</h2>
+            </div>
+            <div id="linuxStream" class="stream-list"></div>
+          </section>
+
+          <section class="stream-panel" data-source="mysql" role="tabpanel" aria-labelledby="mysqlTab">
+            <div class="stream-header">
+              <h2>MySQL 输出</h2>
+            </div>
+            <div id="mysqlStream" class="stream-list"></div>
+          </section>
+
+          <section class="stream-panel" data-source="redis" role="tabpanel" aria-labelledby="redisTab">
+            <div class="stream-header">
+              <h2>Redis 输出</h2>
+            </div>
+            <div id="redisStream" class="stream-list"></div>
+          </section>
+        </section>
+
+        <aside class="rail commands" aria-label="支持命令">
+          <section class="panel">
+            <div class="panel-title">
+              <h2>MySQL 命令</h2>
+              <span>limit 400</span>
+            </div>
+            <div id="mysqlCommands" class="command-list"></div>
+          </section>
+
+          <section class="panel redis-command-panel">
+            <div class="panel-title">
+              <h2>Redis 命令</h2>
+              <span>只读</span>
+            </div>
+            <div id="redisCommands" class="command-list command-list-scroll"></div>
+          </section>
+        </aside>
+      </section>
+    </main>
+
+    <section id="approvalModal" class="approval-modal" aria-hidden="true">
+      <div class="approval-dialog" role="dialog" aria-modal="true" aria-labelledby="approvalModalTitle">
+        <div class="approval-dialog-head">
+          <div>
+            <p class="eyebrow">Linux 审批</p>
+            <h2 id="approvalModalTitle">待审批命令</h2>
+          </div>
+          <span id="pendingCount" class="approval-count">0</span>
+        </div>
+        <div id="approvalList" class="approval-list"></div>
+      </div>
+    </section>
+
+    <script src="/console/app.js" type="module"></script>
+  </body>
+</html>
