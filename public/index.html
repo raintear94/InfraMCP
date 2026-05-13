@@ -13,11 +13,22 @@
           <p class="eyebrow">Infra MCP</p>
           <h1>运行控制台</h1>
         </div>
-        <div class="connection" id="connectionState">连接中</div>
+        <div class="topbar-meta">
+          <div id="configSaveState" class="save-state">等待配置加载</div>
+          <div class="connection" id="connectionState">连接中</div>
+        </div>
       </header>
 
       <section class="workspace" aria-label="运行控制台">
-        <aside class="rail" aria-label="审批策略">
+        <aside class="rail" aria-label="控制台侧栏">
+          <section class="panel">
+            <div class="panel-title">
+              <h2>配置文件</h2>
+              <span>用户空间</span>
+            </div>
+            <div id="configPathList" class="config-path-list"></div>
+          </section>
+
           <section class="panel">
             <div class="panel-title">
               <h2>审批策略</h2>
@@ -27,8 +38,8 @@
           </section>
         </aside>
 
-        <section class="streams" aria-label="输出窗口">
-          <div class="stream-tabs" role="tablist" aria-label="输出类型">
+        <section class="streams" aria-label="主工作区">
+          <div class="stream-tabs" role="tablist" aria-label="工作区类型">
             <button class="stream-tab active" id="linuxTab" type="button" role="tab" aria-selected="true" data-source="linux">
               Linux
               <span id="linuxCount">0 条</span>
@@ -40,6 +51,10 @@
             <button class="stream-tab" id="redisTab" type="button" role="tab" aria-selected="false" data-source="redis">
               Redis
               <span id="redisCount">0 条</span>
+            </button>
+            <button class="stream-tab" id="configTab" type="button" role="tab" aria-selected="false" data-source="config">
+              配置
+              <span>动态表单</span>
             </button>
           </div>
 
@@ -62,6 +77,17 @@
               <h2>Redis 输出</h2>
             </div>
             <div id="redisStream" class="stream-list"></div>
+          </section>
+
+          <section class="stream-panel config-panel" data-source="config" role="tabpanel" aria-labelledby="configTab">
+            <div class="stream-header config-header">
+              <div>
+                <h2>服务端配置</h2>
+                <span id="configPanelHint">修改后会写入用户空间配置文件</span>
+              </div>
+              <button id="saveConfigButton" class="primary-button" type="button">保存配置</button>
+            </div>
+            <div id="configEditor" class="config-editor"></div>
           </section>
         </section>
 

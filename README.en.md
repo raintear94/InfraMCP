@@ -2,7 +2,7 @@
 
 Infra MCP is a standalone HTTP MCP server that lets AI access server-configured MySQL, Redis, and deployment Linux command lines with project isolation.
 
-Real connection details are stored only in `infra-mcp.server.config.json` under the Infra MCP service directory. Business project roots only need `infra-mcp.client.config.json`, which stores `projectKey` and the agent-facing `prompt`; do not store database, Redis, or SSH passwords there.
+Real connection details are stored only in `~/.infra-mcp/infra-mcp.server.config.json` under the user home directory. Installation or first startup also generates `~/.infra-mcp/infra-mcp.client.config.json` as a template. Each business project root should copy and maintain its own `infra-mcp.client.config.json`, which stores `projectKey` and the agent-facing `prompt`; do not store database, Redis, or SSH passwords there.
 
 ## Features
 
@@ -11,17 +11,37 @@ Real connection details are stored only in `infra-mcp.server.config.json` under 
 - `mysql_select`: run only a single `SELECT` query, limited to 400 returned rows.
 - `redis_query`: run only Redis commands from the read-only allowlist.
 - `linux_exec`: run structured deployment Linux commands over SSH; pass `program`, `args`, `cwd`, and `explanation` for a single command, or pass a `commands` array for multiple commands. Do not wrap multiple commands with `bash -lc` or `sh -c`. Read-only diagnostic commands that match the allowlist run directly, while commands with side effects or unknown commands require confirmation in the web console.
-- Web console: open `http://127.0.0.1:3120/console` to view separate MySQL, Redis, and Linux input/output streams and maintain Linux risk-type approval policy.
+- Web console: open `http://127.0.0.1:3120/console` to view separate MySQL, Redis, and Linux input/output streams, maintain Linux risk-type approval policy, and edit `~/.infra-mcp/infra-mcp.server.config.json` through a dynamic form.
 
 ## Usage
 
 1. Install Node.js 20 or later.
 
-2. Edit `infra-mcp.server.config.json` in the Infra MCP service directory and fill in the real MySQL, Redis, and Linux SSH connections.
+2. Edit `~/.infra-mcp/infra-mcp.server.config.json` in the user home directory and fill in the real MySQL, Redis, and Linux SSH connections.
+
+   Default Windows path:
+
+   ```text
+   %USERPROFILE%\.infra-mcp\infra-mcp.server.config.json
+   ```
+
+   Default macOS / Linux path:
+
+   ```text
+   ~/.infra-mcp/infra-mcp.server.config.json
+   ```
 
    `http` configures the MCP HTTP service listener. Each entry in `projects` uses `projectKey` to match a client project config. `linuxServers` can configure one or more Linux servers; when there is only one server, `linux_exec` may omit `serverName`, and when there are multiple servers, the server name is required.
 
 3. Start the server.
+
+   If the runtime package was installed through npm, you can start it directly with:
+
+   ```powershell
+   infra
+   ```
+
+   This command starts the packaged Node entry and is intended for direct use after a global install.
 
    Double-click on Windows:
 
@@ -47,9 +67,9 @@ Real connection details are stored only in `infra-mcp.server.config.json` under 
    chmod +x start.command start.sh
    ```
 
-   The release package does not include `node_modules`. The first startup automatically runs `npm install --omit=dev` to install runtime dependencies, and later startups reuse the installed dependencies.
+   The release package does not include `node_modules`. The first startup automatically runs `npm install --omit=dev` to install runtime dependencies, and later startups reuse the installed dependencies. If the template files are missing under `~/.infra-mcp`, installation or first startup creates both the server config template and the client config template automatically.
 
-4. Create `infra-mcp.client.config.json` in the business project root where MCP will be used:
+4. After installation or first startup, `~/.infra-mcp/infra-mcp.client.config.json` is generated as a client template. Copy it into the business project root where MCP will be used, then edit it for the actual project:
 
    ```json
    {
@@ -72,7 +92,7 @@ Real connection details are stored only in `infra-mcp.server.config.json` under 
 
    The browser connects to the server through `ws://127.0.0.1:3120/console/ws`. MySQL, Redis, and Linux output is separated, and input, output, error, and approval events use different colors.
 
-7. Before using tools, the agent should read `infra-mcp.client.config.json` from the current business project root, follow its `prompt`, and then pass `projectKey` to MCP tools.
+7. Before using tools, the agent should read `infra-mcp.client.config.json` from the current business project root, follow its `prompt`, and then pass `projectKey` to MCP tools. The web console's Config tab edits only the server-side config and does not replace the project-root client config.
 
 ## Release Packaging
 
@@ -90,7 +110,7 @@ Or run in PowerShell:
 
 The script rebuilds and obfuscates the code, then outputs the runtime package to `release/infra-mcp-runtime` without creating a zip file. The release directory does not include `node_modules`; first startup installs runtime dependencies with `npm install --omit=dev` through `start.bat`, `start.ps1`, `start.command`, or `start.sh`.
 
-The packaging script does not copy the development environment's real `infra-mcp.server.config.json`. It always writes a demo server config to avoid packaging local database, Redis, or SSH connection details. After packaging, edit `release/infra-mcp-runtime/infra-mcp.server.config.json` for the target environment.
+After installation, the runtime package automatically runs `node dist/index.js --init-user-home` and generates `~/.infra-mcp/infra-mcp.server.config.json` and `~/.infra-mcp/infra-mcp.client.config.json` in the user home directory. The packaging script does not copy real local database, Redis, or SSH connection details into the release directory.
 
 ## Codex Configuration
 
@@ -111,13 +131,13 @@ tool_timeout_sec = 60
 enabled = true
 ```
 
-If `http.port` or `http.path` is changed in `infra-mcp.server.config.json`, update the port or path in the `url` above as well. After saving, restart Codex or reload the MCP server in Codex. Before use, keep the service directory's `start.bat`, `start.ps1`, or `start.command` window running.
+If `http.port` or `http.path` is changed in `~/.infra-mcp/infra-mcp.server.config.json`, update the port or path in the `url` above as well. After saving, restart Codex or reload the MCP server in Codex. Before use, keep the service directory's `start.bat`, `start.ps1`, or `start.command` window running.
 
 The Codex config file should contain only the MCP service address, not database, Redis, or SSH accounts and passwords. Each business project still needs `infra-mcp.client.config.json` in its project root, and its `projectKey` must match a `projectKey` under the server-side `projects`.
 
 ## Server Config Example
 
-`infra-mcp.server.config.json` example:
+`~/.infra-mcp/infra-mcp.server.config.json` example:
 
 ```json
 {
@@ -161,7 +181,7 @@ The Codex config file should contain only the MCP service address, not database,
 }
 ```
 
-Linux SSH login supports passwords or private keys. For password login, fill in `password`; for private-key login, fill in `privateKeyPath`. Relative paths are resolved from the Infra MCP service directory.
+Linux SSH login supports passwords or private keys. For password login, fill in `password`; for private-key login, fill in `privateKeyPath`. Relative paths are resolved from the `~/.infra-mcp` directory.
 
 ## Security Notes
 
@@ -170,5 +190,5 @@ Linux SSH login supports passwords or private keys. For password login, fill in 
 - Linux automatic execution allows only simple commands formatted from structured input or pipelines made of read-only allowlisted commands.
 - Linux commands that include `sudo`, multiple statements, redirection, background execution, command substitution, unknown commands, or suspected side-effect operations wait for confirmation in the web console.
 - The Linux approval dialog lists each pending command with the Agent-provided `explanation`, and commands that trigger approval are highlighted in red.
-- Linux approval is controlled by risk type, and the policy is stored in `infra-mcp.approval-policy.json` under the service directory. Disabling approval for a risk type in the web console lets later commands of the same type run without manual confirmation.
+- Linux approval is controlled by risk type, and the policy is stored in `~/.infra-mcp/infra-mcp.approval-policy.json` under the user home directory. Disabling approval for a risk type in the web console lets later commands of the same type run without manual confirmation.
 - Do not listen on an untrusted network.

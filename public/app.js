@@ -12,14 +12,22 @@ const state = {
   pendingApprovals: new Map(),
   /** WebSocket 连接对象。 */
   socket: undefined,
-  /** 当前选中的输出来源。 */
+  /** 当前选中的工作区。 */
   activeSource: "linux",
+  /** 当前配置状态。 */
+  configState: undefined,
+  /** 当前配置是否有未保存变更。 */
+  configDirty: false,
 };
 
 /** 页面元素引用。 */
 const elements = {
   /** 连接状态。 */
   connectionState: document.querySelector("#connectionState"),
+  /** 配置保存状态。 */
+  configSaveState: document.querySelector("#configSaveState"),
+  /** 配置路径列表。 */
+  configPathList: document.querySelector("#configPathList"),
   /** Linux 输出窗口。 */
   linuxStream: document.querySelector("#linuxStream"),
   /** MySQL 输出窗口。 */
@@ -48,6 +56,12 @@ const elements = {
   streamTabs: document.querySelectorAll(".stream-tab"),
   /** 输出面板列表。 */
   streamPanels: document.querySelectorAll(".stream-panel"),
+  /** 配置面板提示。 */
+  configPanelHint: document.querySelector("#configPanelHint"),
+  /** 配置编辑容器。 */
+  configEditor: document.querySelector("#configEditor"),
+  /** 配置保存按钮。 */
+  saveConfigButton: document.querySelector("#saveConfigButton"),
 };
 
 /** 最大渲染事件数量。 */
@@ -57,6 +71,7 @@ const MAX_RENDERED_EVENTS = 120;
 function init() {
   renderEmptyState();
   bindStreamTabs();
+  bindConfigActions();
   connectSocket();
 }
 
@@ -71,6 +86,13 @@ function bindStreamTabs() {
       }
     });
   }
+}
+
+/** 绑定配置保存事件。 */
+function bindConfigActions() {
+  elements.saveConfigButton.addEventListener("click", () => {
+    saveServerConfig();
+  });
 }
 
 /** 切换当前输出选项卡。 */
@@ -125,6 +147,16 @@ function handleSocketMessage(rawMessage) {
   if (message.type === "policy_state") {
     state.approvalPolicy = message.payload;
     renderPolicy();
+    return;
+  }
+
+  if (message.type === "config_state") {
+    applyConfigState(message.payload, false);
+    return;
+  }
+
+  if (message.type === "config_save_result") {
+    applyConfigSaveResult(message.payload);
   }
 }
 
@@ -140,7 +172,29 @@ function applyInitialState(payload) {
     collectPendingApproval(event);
   }
 
+  applyConfigState(payload?.configState, true);
   renderAll();
+}
+
+/** 应用当前配置状态。 */
+function applyConfigState(configState, resetDirty) {
+  state.configState = cloneJson(configState);
+
+  if (resetDirty) {
+    state.configDirty = false;
+    setConfigSaveState("配置已同步", "success");
+  }
+
+  renderConfigPaths();
+  renderConfigEditor();
+}
+
+/** 应用配置保存结果。 */
+function applyConfigSaveResult(payload) {
+  const success = payload?.success === true;
+  const message = typeof payload?.message === "string" ? payload.message : success ? "配置已保存" : "配置保存失败";
+  state.configDirty = !success;
+  setConfigSaveState(message, success ? "success" : "error");
 }
 
 /** 追加控制台事件。 */
@@ -190,6 +244,8 @@ function renderAll() {
   renderApprovals();
   renderCommands();
   renderStreams();
+  renderConfigPaths();
+  renderConfigEditor();
 }
 
 /** 渲染空状态。 */
@@ -201,6 +257,9 @@ function renderEmptyState() {
   elements.riskPolicyList.replaceChildren(createEmpty("等待策略加载"));
   elements.mysqlCommands.replaceChildren(createEmpty("等待命令加载"));
   elements.redisCommands.replaceChildren(createEmpty("等待命令加载"));
+  elements.configPathList.replaceChildren(createEmpty("等待配置路径加载"));
+  elements.configEditor.replaceChildren(createEmpty("等待配置加载"));
+  setConfigSaveState("等待配置加载", "");
 }
 
 /** 渲染审批策略。 */
@@ -232,6 +291,527 @@ function renderPolicy() {
   });
 
   elements.riskPolicyList.replaceChildren(...(items.length ? items : [createEmpty("暂无审批策略")]));
+}
+
+/** 渲染配置路径信息。 */
+function renderConfigPaths() {
+  const configState = state.configState;
+
+  if (!configState) {
+    elements.configPathList.replaceChildren(createEmpty("等待配置路径加载"));
+    elements.configPanelHint.textContent = "修改后会写入用户空间配置文件";
+    return;
+  }
+
+  const items = [
+    createPathCard("服务端配置", configState.serverConfigPath),
+    createPathCard("客户端模板", configState.clientConfigPath),
+  ];
+
+  elements.configPathList.replaceChildren(...items);
+  elements.configPanelHint.textContent = `服务端配置保存路径：${configState.serverConfigPath}`;
+}
+
+/** 渲染配置编辑器。 */
+function renderConfigEditor() {
+  const serverConfig = state.configState?.serverConfig;
+
+  if (!serverConfig) {
+    elements.configEditor.replaceChildren(createEmpty("等待配置加载"));
+    elements.saveConfigButton.disabled = true;
+    return;
+  }
+
+  elements.saveConfigButton.disabled = false;
+
+  const stack = document.createElement("div");
+  stack.className = "config-stack";
+  stack.append(
+    createConfigIntroCard(),
+    createHttpConfigCard(serverConfig.http ?? {}),
+    createProjectsConfigCard(serverConfig.projects ?? []),
+    createClientTemplateCard(state.configState?.clientConfig),
+  );
+
+  elements.configEditor.replaceChildren(stack);
+}
+
+/** 创建配置说明卡片。 */
+function createConfigIntroCard() {
+  const card = document.createElement("section");
+  card.className = "config-card";
+
+  const title = document.createElement("h3");
+  title.textContent = "编辑说明";
+  const subtitle = document.createElement("p");
+  subtitle.className = "card-subtitle";
+  subtitle.textContent = "服务端配置保存后立即落盘到用户空间；如修改 HTTP 监听地址、端口或路径，需要重启服务后才会实际生效。";
+
+  card.append(title, subtitle);
+  return card;
+}
+
+/** 创建 HTTP 配置卡片。 */
+function createHttpConfigCard(httpConfig) {
+  const card = document.createElement("section");
+  card.className = "config-card";
+
+  const head = document.createElement("div");
+  head.className = "section-head";
+  const title = document.createElement("h3");
+  title.textContent = "HTTP 服务";
+  const hint = document.createElement("span");
+  hint.textContent = "启动参数";
+  head.append(title, hint);
+
+  const grid = document.createElement("div");
+  grid.className = "form-grid";
+  grid.append(
+    createTextField("监听主机", httpConfig.host, "例如 127.0.0.1", (value) => updateHttpField("host", value)),
+    createNumberField("监听端口", httpConfig.port, "1-65535", (value) => updateHttpField("port", value)),
+    createTextField("MCP 路径", httpConfig.path, "例如 /mcp", (value) => updateHttpField("path", value)),
+    createToggleField("记录完整请求和返回", httpConfig.logFullData === true, (value) => updateHttpField("logFullData", value)),
+  );
+
+  card.append(head, grid);
+  return card;
+}
+
+/** 创建项目配置卡片。 */
+function createProjectsConfigCard(projects) {
+  const card = document.createElement("section");
+  card.className = "config-card";
+
+  const head = document.createElement("div");
+  head.className = "section-head";
+  const title = document.createElement("h3");
+  title.textContent = "项目列表";
+  const actions = document.createElement("div");
+  actions.className = "section-actions";
+  actions.append(createButton("新增项目", "secondary-button", () => addProject()));
+  head.append(title, actions);
+
+  const list = document.createElement("div");
+  list.className = "config-project-list";
+  const cards = projects.map((project, index) => createProjectCard(project, index));
+  list.replaceChildren(...(cards.length ? cards : [createEmpty("暂无项目配置，点击“新增项目”开始配置")]));
+
+  card.append(head, list);
+  return card;
+}
+
+/** 创建单个项目配置卡片。 */
+function createProjectCard(project, projectIndex) {
+  const card = document.createElement("section");
+  card.className = "config-card";
+
+  const head = document.createElement("div");
+  head.className = "section-head";
+  const title = document.createElement("h3");
+  title.textContent = `项目 ${projectIndex + 1}`;
+  const actions = document.createElement("div");
+  actions.className = "card-actions";
+  actions.append(createButton("删除项目", "danger-button", () => removeProject(projectIndex)));
+  head.append(title, actions);
+
+  const projectGrid = document.createElement("div");
+  projectGrid.className = "form-grid";
+  projectGrid.append(
+    createTextField("项目 Key", project.projectKey, "例如 demo-project", (value) => updateProjectField(projectIndex, "projectKey", value)),
+    createTextField("项目名称", project.projectName, "例如 Demo Project", (value) => updateProjectField(projectIndex, "projectName", value)),
+  );
+
+  const auxList = document.createElement("div");
+  auxList.className = "config-aux-list";
+  auxList.append(
+    createMySqlCard(project, projectIndex),
+    createRedisCard(project, projectIndex),
+    createLinuxServersCard(project, projectIndex),
+  );
+
+  card.append(head, projectGrid, auxList);
+  return card;
+}
+
+/** 创建 MySQL 配置区域。 */
+function createMySqlCard(project, projectIndex) {
+  const mysqlConfig = project.mysql;
+  const card = document.createElement("section");
+  card.className = "preview-card";
+
+  const head = document.createElement("div");
+  head.className = "section-head";
+  const title = document.createElement("h3");
+  title.textContent = "MySQL";
+  const actions = document.createElement("div");
+  actions.className = "card-actions";
+
+  if (mysqlConfig) {
+    actions.append(createButton("移除 MySQL", "danger-button", () => removeProjectMySql(projectIndex)));
+  } else {
+    actions.append(createButton("启用 MySQL", "secondary-button", () => addProjectMySql(projectIndex)));
+  }
+
+  head.append(title, actions);
+  card.append(head);
+
+  if (!mysqlConfig) {
+    card.append(createEmpty("当前项目未配置 MySQL"));
+    return card;
+  }
+
+  const grid = document.createElement("div");
+  grid.className = "form-grid";
+  grid.append(
+    createTextField("主机", mysqlConfig.host, "例如 127.0.0.1", (value) => updateProjectMySqlField(projectIndex, "host", value)),
+    createNumberField("端口", mysqlConfig.port, "例如 3306", (value) => updateProjectMySqlField(projectIndex, "port", value)),
+    createTextField("用户名", mysqlConfig.user, "例如 root", (value) => updateProjectMySqlField(projectIndex, "user", value)),
+    createTextField("密码", mysqlConfig.password, "数据库密码", (value) => updateProjectMySqlField(projectIndex, "password", value)),
+    createTextField("默认数据库", mysqlConfig.database, "可留空", (value) => updateProjectMySqlField(projectIndex, "database", value)),
+    createNumberField("连接池大小", mysqlConfig.connectionLimit, "默认 5", (value) => updateProjectMySqlField(projectIndex, "connectionLimit", value)),
+  );
+
+  card.append(grid);
+  return card;
+}
+
+/** 创建 Redis 配置区域。 */
+function createRedisCard(project, projectIndex) {
+  const redisConfig = project.redis;
+  const card = document.createElement("section");
+  card.className = "preview-card";
+
+  const head = document.createElement("div");
+  head.className = "section-head";
+  const title = document.createElement("h3");
+  title.textContent = "Redis";
+  const actions = document.createElement("div");
+  actions.className = "card-actions";
+
+  if (redisConfig) {
+    actions.append(createButton("移除 Redis", "danger-button", () => removeProjectRedis(projectIndex)));
+  } else {
+    actions.append(createButton("启用 Redis", "secondary-button", () => addProjectRedis(projectIndex)));
+  }
+
+  head.append(title, actions);
+  card.append(head);
+
+  if (!redisConfig) {
+    card.append(createEmpty("当前项目未配置 Redis"));
+    return card;
+  }
+
+  const grid = document.createElement("div");
+  grid.className = "form-grid";
+  grid.append(
+    createTextField("主机", redisConfig.host, "例如 127.0.0.1", (value) => updateProjectRedisField(projectIndex, "host", value)),
+    createNumberField("端口", redisConfig.port, "例如 6379", (value) => updateProjectRedisField(projectIndex, "port", value)),
+    createTextField("用户名", redisConfig.username, "普通 Redis 可留空", (value) => updateProjectRedisField(projectIndex, "username", value)),
+    createTextField("密码", redisConfig.password, "可留空", (value) => updateProjectRedisField(projectIndex, "password", value)),
+    createNumberField("数据库编号", redisConfig.database, "默认 0", (value) => updateProjectRedisField(projectIndex, "database", value)),
+  );
+
+  card.append(grid);
+  return card;
+}
+
+/** 创建 Linux 服务器配置区域。 */
+function createLinuxServersCard(project, projectIndex) {
+  const linuxServers = Array.isArray(project.linuxServers) ? project.linuxServers : [];
+  const card = document.createElement("section");
+  card.className = "preview-card";
+
+  const head = document.createElement("div");
+  head.className = "section-head";
+  const title = document.createElement("h3");
+  title.textContent = "Linux 服务器";
+  const actions = document.createElement("div");
+  actions.className = "card-actions";
+  actions.append(createButton("新增服务器", "secondary-button", () => addLinuxServer(projectIndex)));
+  head.append(title, actions);
+
+  const list = document.createElement("div");
+  list.className = "server-list";
+  const cards = linuxServers.map((server, serverIndex) => createLinuxServerCard(server, projectIndex, serverIndex));
+  list.replaceChildren(...(cards.length ? cards : [createEmpty("当前项目未配置 Linux 服务器")]));
+
+  card.append(head, list);
+  return card;
+}
+
+/** 创建单个 Linux 服务器卡片。 */
+function createLinuxServerCard(server, projectIndex, serverIndex) {
+  const card = document.createElement("article");
+  card.className = "server-card";
+
+  const head = document.createElement("div");
+  head.className = "section-head";
+  const title = document.createElement("h3");
+  title.textContent = `服务器 ${serverIndex + 1}`;
+  const actions = document.createElement("div");
+  actions.className = "card-actions";
+  actions.append(createButton("删除服务器", "danger-button", () => removeLinuxServer(projectIndex, serverIndex)));
+  head.append(title, actions);
+
+  const grid = document.createElement("div");
+  grid.className = "form-grid";
+  grid.append(
+    createTextField("名称", server.name, "例如 prod-1", (value) => updateLinuxServerField(projectIndex, serverIndex, "name", value)),
+    createTextField("主机", server.host, "例如 192.168.1.10", (value) => updateLinuxServerField(projectIndex, serverIndex, "host", value)),
+    createNumberField("端口", server.port, "例如 22", (value) => updateLinuxServerField(projectIndex, serverIndex, "port", value)),
+    createTextField("用户名", server.username, "例如 deploy", (value) => updateLinuxServerField(projectIndex, serverIndex, "username", value)),
+    createTextField("密码", server.password, "可留空", (value) => updateLinuxServerField(projectIndex, serverIndex, "password", value)),
+    createTextField("私钥路径", server.privateKeyPath, "相对 .infra-mcp 目录", (value) => updateLinuxServerField(projectIndex, serverIndex, "privateKeyPath", value)),
+  );
+
+  card.append(head, grid);
+  return card;
+}
+
+/** 创建客户端模板预览卡片。 */
+function createClientTemplateCard(clientConfig) {
+  const card = document.createElement("section");
+  card.className = "config-card";
+
+  const head = document.createElement("div");
+  head.className = "section-head";
+  const title = document.createElement("h3");
+  title.textContent = "客户端模板";
+  const hint = document.createElement("span");
+  hint.textContent = "安装时同步生成";
+  head.append(title, hint);
+
+  const subtitle = document.createElement("p");
+  subtitle.className = "card-subtitle";
+  subtitle.textContent = "该模板会写入用户空间，供复制到业务项目根目录后再按实际项目修改。";
+
+  const preview = document.createElement("pre");
+  preview.className = "preview-json";
+  preview.textContent = JSON.stringify(clientConfig ?? {}, null, 2);
+
+  card.append(head, subtitle, preview);
+  return card;
+}
+
+/** 创建文本输入字段。 */
+function createTextField(label, value, placeholder, onInput) {
+  const field = document.createElement("label");
+  field.className = "field";
+
+  const title = document.createElement("span");
+  title.className = "field-label";
+  title.textContent = label;
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.value = toDisplayString(value);
+  input.placeholder = placeholder;
+  input.addEventListener("input", () => onInput(input.value));
+
+  field.append(title, input);
+  return field;
+}
+
+/** 创建数字输入字段。 */
+function createNumberField(label, value, placeholder, onInput) {
+  const field = document.createElement("label");
+  field.className = "field";
+
+  const title = document.createElement("span");
+  title.className = "field-label";
+  title.textContent = label;
+
+  const input = document.createElement("input");
+  input.type = "number";
+  input.value = value === undefined || value === null ? "" : String(value);
+  input.placeholder = placeholder;
+  input.addEventListener("input", () => onInput(parseNumberInput(input.value)));
+
+  field.append(title, input);
+  return field;
+}
+
+/** 创建布尔开关字段。 */
+function createToggleField(label, checked, onChange) {
+  const field = document.createElement("div");
+  field.className = "field";
+
+  const title = document.createElement("span");
+  title.className = "field-label";
+  title.textContent = label;
+
+  const toggle = document.createElement("label");
+  toggle.className = "toggle-field";
+  const text = document.createElement("span");
+  text.className = "field-hint";
+  text.textContent = checked ? "开启" : "关闭";
+  const switchWrap = document.createElement("span");
+  switchWrap.className = "switch";
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.checked = checked;
+  input.addEventListener("change", () => {
+    text.textContent = input.checked ? "开启" : "关闭";
+    onChange(input.checked);
+  });
+  const visual = document.createElement("span");
+  switchWrap.append(input, visual);
+  toggle.append(text, switchWrap);
+
+  field.append(title, toggle);
+  return field;
+}
+
+/** 创建按钮。 */
+function createButton(text, className, onClick) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = className;
+  button.textContent = text;
+  button.addEventListener("click", onClick);
+  return button;
+}
+
+/** 创建配置路径卡片。 */
+function createPathCard(label, value) {
+  const card = document.createElement("article");
+  card.className = "path-card";
+
+  const title = document.createElement("div");
+  title.className = "path-label";
+  title.textContent = label;
+
+  const body = document.createElement("div");
+  body.className = "path-value";
+  body.textContent = value ?? "未提供";
+
+  card.append(title, body);
+  return card;
+}
+
+/** 新增项目。 */
+function addProject() {
+  updateEditableServerConfig((serverConfig) => {
+    serverConfig.projects = Array.isArray(serverConfig.projects) ? serverConfig.projects : [];
+    serverConfig.projects.push(createDefaultProjectConfig());
+  }, true);
+}
+
+/** 删除项目。 */
+function removeProject(projectIndex) {
+  updateEditableServerConfig((serverConfig) => {
+    serverConfig.projects.splice(projectIndex, 1);
+  }, true);
+}
+
+/** 更新 HTTP 字段。 */
+function updateHttpField(fieldName, value) {
+  updateEditableServerConfig((serverConfig) => {
+    serverConfig.http[fieldName] = value;
+  });
+}
+
+/** 更新项目字段。 */
+function updateProjectField(projectIndex, fieldName, value) {
+  updateEditableServerConfig((serverConfig) => {
+    serverConfig.projects[projectIndex][fieldName] = normalizeOptionalString(value);
+  });
+}
+
+/** 启用项目 MySQL 配置。 */
+function addProjectMySql(projectIndex) {
+  updateEditableServerConfig((serverConfig) => {
+    serverConfig.projects[projectIndex].mysql = createDefaultMySqlConfig();
+  }, true);
+}
+
+/** 移除项目 MySQL 配置。 */
+function removeProjectMySql(projectIndex) {
+  updateEditableServerConfig((serverConfig) => {
+    delete serverConfig.projects[projectIndex].mysql;
+  }, true);
+}
+
+/** 更新项目 MySQL 字段。 */
+function updateProjectMySqlField(projectIndex, fieldName, value) {
+  updateEditableServerConfig((serverConfig) => {
+    serverConfig.projects[projectIndex].mysql[fieldName] = normalizeConfigValue(value);
+  });
+}
+
+/** 启用项目 Redis 配置。 */
+function addProjectRedis(projectIndex) {
+  updateEditableServerConfig((serverConfig) => {
+    serverConfig.projects[projectIndex].redis = createDefaultRedisConfig();
+  }, true);
+}
+
+/** 移除项目 Redis 配置。 */
+function removeProjectRedis(projectIndex) {
+  updateEditableServerConfig((serverConfig) => {
+    delete serverConfig.projects[projectIndex].redis;
+  }, true);
+}
+
+/** 更新项目 Redis 字段。 */
+function updateProjectRedisField(projectIndex, fieldName, value) {
+  updateEditableServerConfig((serverConfig) => {
+    serverConfig.projects[projectIndex].redis[fieldName] = normalizeConfigValue(value);
+  });
+}
+
+/** 新增 Linux 服务器。 */
+function addLinuxServer(projectIndex) {
+  updateEditableServerConfig((serverConfig) => {
+    const project = serverConfig.projects[projectIndex];
+    project.linuxServers = Array.isArray(project.linuxServers) ? project.linuxServers : [];
+    project.linuxServers.push(createDefaultLinuxServerConfig(project.linuxServers.length + 1));
+  }, true);
+}
+
+/** 删除 Linux 服务器。 */
+function removeLinuxServer(projectIndex, serverIndex) {
+  updateEditableServerConfig((serverConfig) => {
+    serverConfig.projects[projectIndex].linuxServers.splice(serverIndex, 1);
+  }, true);
+}
+
+/** 更新 Linux 服务器字段。 */
+function updateLinuxServerField(projectIndex, serverIndex, fieldName, value) {
+  updateEditableServerConfig((serverConfig) => {
+    serverConfig.projects[projectIndex].linuxServers[serverIndex][fieldName] = normalizeConfigValue(value);
+  });
+}
+
+/** 更新可编辑服务端配置。 */
+function updateEditableServerConfig(mutator, shouldRerender) {
+  const serverConfig = state.configState?.serverConfig;
+
+  if (!serverConfig) {
+    return;
+  }
+
+  mutator(serverConfig);
+  state.configDirty = true;
+  setConfigSaveState("有未保存更改", "");
+
+  if (shouldRerender) {
+    renderConfigEditor();
+  }
+}
+
+/** 保存服务端配置。 */
+function saveServerConfig() {
+  if (!state.configState?.serverConfig) {
+    return;
+  }
+
+  setConfigSaveState("正在保存配置", "");
+  sendSocketMessage({
+    type: "config_save",
+    serverConfig: state.configState.serverConfig,
+  });
 }
 
 /** 渲染待审批命令。 */
@@ -291,10 +871,15 @@ function createApprovalCommandList(event) {
 /** 创建兜底审批命令。 */
 function createFallbackApprovalCommand(event) {
   return {
+    /** 实际命令文本。 */
     command: event.data?.command ?? event.text,
+    /** 命令说明。 */
     explanation: event.data?.explanation,
+    /** 当前命令是否需要审批。 */
     approvalRequired: true,
+    /** 风险原因列表。 */
     reasons: event.data?.reasons,
+    /** 风险类型列表。 */
     riskTypes: event.data?.riskTypes,
   };
 }
@@ -546,6 +1131,12 @@ function setConnectionState(text, className) {
   elements.connectionState.className = `connection ${className}`.trim();
 }
 
+/** 设置配置保存状态。 */
+function setConfigSaveState(text, tone) {
+  elements.configSaveState.textContent = text;
+  elements.configSaveState.className = `save-state ${tone}`.trim();
+}
+
 /** 创建空状态节点。 */
 function createEmpty(text) {
   const node = document.createElement("div");
@@ -561,6 +1152,104 @@ function parseJson(value) {
   } catch {
     return undefined;
   }
+}
+
+/** 深拷贝普通 JSON 数据。 */
+function cloneJson(value) {
+  return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+}
+
+/** 创建默认项目配置。 */
+function createDefaultProjectConfig() {
+  return {
+    /** 默认项目 key。 */
+    projectKey: "",
+    /** 默认项目名称。 */
+    projectName: "",
+    /** 默认 Linux 服务器列表。 */
+    linuxServers: [],
+  };
+}
+
+/** 创建默认 MySQL 配置。 */
+function createDefaultMySqlConfig() {
+  return {
+    /** 默认 MySQL 主机。 */
+    host: "127.0.0.1",
+    /** 默认 MySQL 端口。 */
+    port: 3306,
+    /** 默认 MySQL 用户名。 */
+    user: "",
+    /** 默认 MySQL 密码。 */
+    password: "",
+    /** 默认 MySQL 数据库。 */
+    database: "",
+    /** 默认连接池大小。 */
+    connectionLimit: 5,
+  };
+}
+
+/** 创建默认 Redis 配置。 */
+function createDefaultRedisConfig() {
+  return {
+    /** 默认 Redis 主机。 */
+    host: "127.0.0.1",
+    /** 默认 Redis 端口。 */
+    port: 6379,
+    /** 默认 Redis 用户名。 */
+    username: "",
+    /** 默认 Redis 密码。 */
+    password: "",
+    /** 默认 Redis 数据库编号。 */
+    database: 0,
+  };
+}
+
+/** 创建默认 Linux 服务器配置。 */
+function createDefaultLinuxServerConfig(index) {
+  return {
+    /** 默认服务器名称。 */
+    name: `server-${index}`,
+    /** 默认服务器主机。 */
+    host: "",
+    /** 默认服务器端口。 */
+    port: 22,
+    /** 默认服务器用户名。 */
+    username: "",
+    /** 默认服务器密码。 */
+    password: "",
+    /** 默认服务器私钥路径。 */
+    privateKeyPath: "",
+  };
+}
+
+/** 规范化可选字符串。 */
+function normalizeOptionalString(value) {
+  return value === "" ? "" : value;
+}
+
+/** 规范化配置字段值。 */
+function normalizeConfigValue(value) {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  return value;
+}
+
+/** 将值转换为输入框展示文本。 */
+function toDisplayString(value) {
+  return value === undefined || value === null ? "" : String(value);
+}
+
+/** 解析数字输入框值。 */
+function parseNumberInput(value) {
+  if (value === "") {
+    return undefined;
+  }
+
+  const parsedValue = Number(value);
+  return Number.isFinite(parsedValue) ? parsedValue : undefined;
 }
 
 /** 格式化时间。 */
